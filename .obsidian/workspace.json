@@ -14,7 +14,7 @@
               "type": "markdown",
               "state": {
                 "file": "game-design-documents/marble-music/00-index.md",
-                "mode": "source",
+                "mode": "preview",
                 "source": false
               },
               "icon": "lucide-file",
@@ -185,9 +185,10 @@
   },
   "active": "2b27dbd9ef199492",
   "lastOpenFiles": [
+    "game-design-documents/marble-music/00-index.md",
+    "marble-music",
     "game-design-documents/marble-music/01-product-vision-scope.md",
     "game-design-documents/marble-music/10-global-consistency-review.md",
-    "game-design-documents/marble-music/00-index.md",
     "未命名.canvas",
     "未命名.base",
     "game-design-documents/marble-music/08-test-plan-acceptance.md",

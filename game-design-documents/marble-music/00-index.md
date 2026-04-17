@@ -1,36 +1,57 @@
-# 音乐物理沙盒 GDD（v1）总索引
+# Marble Music -- 音乐物理沙盒 GDD 总索引
+
+> **一句话概述**：玩家在 2D 物理沙盒中搭建结构、释放弹珠、碰撞产生音乐、回看时间线——一款"搭、听、看、调"的 PC Web 创作玩具。
+
+---
 
 ## 文档信息
 
-- 功能代号：`001-music-physics-sandbox`
-- 目标平台：PC Web（桌面浏览器）
-- 技术栈基线：`Vite + TypeScript + Matter.js + Web Audio API + Canvas 2D`
-- 文档语言：中文（英文术语附中文语义）
-- 版本状态：可执行版本（对齐当前实现与测试资产）
+| 字段       | 值                                                    |
+| ---------- | ----------------------------------------------------- |
+| 功能代号   | `001-music-physics-sandbox`                           |
+| 目标平台   | PC Web（桌面浏览器，Chrome/Edge/Firefox）              |
+| 技术栈     | Vite + TypeScript + Matter.js + Web Audio API + Canvas 2D |
+| 文档语言   | 中文（英文术语附中文语义）                            |
+| 版本       | v1 -- 可执行版本                                      |
 
-## 用户确认的最终规则（强约束）
+---
 
-- 播放态控制：`Space` 为播放/停止，不提供暂停。
-- Timeline 显示策略：播放时隐藏，仅编辑模式可见并用于回看。
-- 预测线策略：仅编辑模式显示。
-- 音乐触发策略：每次触发都完整播放包络，可重叠发声。
-- 主球跟随策略：存在多个小球时，点击小球仅表示选中；按 `Space` 启动播放时，若有选中球则跟随该球，否则不自动跟随；用户始终可手动平移/缩放视窗。
+## 核心设计约束（全局强约束）
+
+以下规则已经用户确认定稿，所有分卷设计必须遵守，不可在实现中被绕过或削弱：
+
+| 编号 | 约束                                | 说明                                                                                 |
+| ---- | ----------------------------------- | ------------------------------------------------------------------------------------ |
+| C1   | 播放/停止，无暂停                   | `Space` 在编辑态开始播放、在播放态停止并返回编辑态。不存在暂停状态。                  |
+| C2   | Timeline 播放时隐藏                 | 播放时 Timeline UI 隐藏，但后台持续记录事件。仅编辑模式可见，用于回看。               |
+| C3   | 预测线仅编辑态                      | 预测线（小球轨迹预览）仅在编辑模式下计算和渲染。                                      |
+| C4   | 触发即完整发声，允许重叠            | 每次碰撞触发都创建独立音符实例，完整播放包络衰减。多次触发可重叠发声，无冷却抑制。     |
+| C5   | 选中球跟随策略                      | 多球场景下，点击小球仅选中；按 `Space` 启动播放时，若有选中球则相机跟随该球，否则不自动跟随。用户始终可手动平移/缩放。 |
+
+---
 
 ## GDD 分卷结构
 
-1.  [`01-product-vision-scope.md`](./01-product-vision-scope.md)：产品目标、用户、范围与边界
-2.  [`02-core-loop-and-gameplay-systems.md`](./02-core-loop-and-gameplay-systems.md)：核心循环与玩法系统
-3.  [`03-interaction-design-input-flow.md`](./03-interaction-design-input-flow.md)：交互设计与输入映射
-4.  [`04-ui-ux-visual-design.md`](./04-ui-ux-visual-design.md)：界面结构、状态与视觉规范
-5.  [`05-audio-music-visualization.md`](./05-audio-music-visualization.md)：音频系统、参数与可视化规则
-6.  [`06-technical-architecture.md`](./06-technical-architecture.md)：技术架构与模块职责
-7.  [`07-data-model-save-contracts.md`](./07-data-model-save-contracts.md)：数据模型、序列化与存档契约
-8.  [`08-test-plan-acceptance.md`](./08-test-plan-acceptance.md)：测试策略、验收矩阵与发布门禁
-9.  [`09-roadmap-and-risks.md`](./09-roadmap-and-risks.md)：演进路线与风险管理
+| 卷号 | 文件                                                                       | 主题                       | 核心读者            |
+| ---- | -------------------------------------------------------------------------- | -------------------------- | ------------------- |
+| 01   | [产品愿景与范围](./01-product-vision-scope.md)                              | 目标、用户画像、范围与边界 | 产品 / 策划         |
+| 02   | [核心循环与玩法系统](./02-core-loop-and-gameplay-systems.md)                | 游戏循环、实体、触发时序   | 策划 / 开发         |
+| 03   | [交互设计与输入映射](./03-interaction-design-input-flow.md)                 | 键鼠操作、模式切换流程     | 策划 / 前端开发     |
+| 04   | [UI/UX 与视觉设计](./04-ui-ux-visual-design.md)                            | 布局、组件规范、动效       | 设计 / 前端开发     |
+| 05   | [音频与音乐可视化](./05-audio-music-visualization.md)                       | 发声模型、包络、可视化     | 音频开发 / 前端开发 |
+| 06   | [技术架构与模块职责](./06-technical-architecture.md)                        | 模块分层、主循环、状态机   | 开发                |
+| 07   | [数据模型与存档契约](./07-data-model-save-contracts.md)                     | 实体结构、序列化、持久化   | 开发                |
+| 08   | [测试计划与验收标准](./08-test-plan-acceptance.md)                          | 测试分层、验收矩阵、门禁   | QA / 开发           |
+| 09   | [演进路线与风险管理](./09-roadmap-and-risks.md)                             | 后续方向、风险与缓解       | 产品 / 技术负责人   |
 
-## 阅读顺序建议
+---
 
-- 产品/策划：[01](./01-product-vision-scope.md) -> [02](./02-core-loop-and-gameplay-systems.md) -> [03](./03-interaction-design-input-flow.md) -> [04](./04-ui-ux-visual-design.md)
-- 客户端开发：[02](./02-core-loop-and-gameplay-systems.md) -> [05](./05-audio-music-visualization.md) -> [06](./06-technical-architecture.md) -> [07](./07-data-model-save-contracts.md)
-- QA：[03](./03-interaction-design-input-flow.md) -> [04](./04-ui-ux-visual-design.md) -> [08](./08-test-plan-acceptance.md)
-- 迭代规划：[09](./09-roadmap-and-risks.md)
+## 推荐阅读路径
+
+**产品 / 策划**：01 -> 02 -> 03 -> 04 -> 09
+
+**客户端开发**：02 -> 05 -> 06 -> 07 -> 03
+
+**QA**：03 -> 04 -> 08 -> 02
+
+**项目管理**：01 -> 09 -> 08

@@ -1,62 +1,230 @@
-# 数据模型、存档与契约
+# 07 -- 数据模型、存档与契约
 
-## 1. 核心实体
+## 1. 核心实体数据模型
 
-### Scene
+### Scene（场景）
 
-- 关键字段：`id`、`mode`、`gravity`、`selectedBallId`、`entities`、`timeline`。
-- 说明：`selectedBallId` 表示“当前选中球”，用于播放启动时的跟随目标判定；可为 `null`。
+场景是顶层容器，持有所有实体和运行时状态。
 
-### Ball
+```typescript
+interface Scene {
+  id: string;                    // 场景唯一标识
+  mode: "edit" | "play";         // 当前模式
+  gravity: { x: number; y: number }; // 重力向量（默认 { x: 0, y: 9.8 }）
+  selectedBallId: string | null; // 当前选中球 ID，null 表示无选中
+  entities: Entity[];            // 场景中所有实体
+  timeline: ContactEvent[];      // 碰撞事件记录
+}
+```
 
-- 关键字段：`id`、`kind=ball`、`x/y`、`vx/vy`、`radius`。
-- 规则：播放态仅 Ball 会被物理推进。
+**说明**：
+- `selectedBallId` 用于播放启动时的跟随目标判定，不影响持久化以外的逻辑
+- `mode` 在存档中始终保存为 `"edit"`（播放态不持久化）
 
-### Block
+---
 
-- 关键字段：`id`、`kind=block`、`x/y`、`width/height`、`rotation`。
-- 规则：始终静态。
+### Ball（小球）
 
-### MusicBlock
+```typescript
+interface Ball {
+  id: string;
+  kind: "ball";           // 类型判别字段
+  x: number;              // 位置 X
+  y: number;              // 位置 Y
+  vx: number;             // 速度 X（编辑态为 0）
+  vy: number;             // 速度 Y（编辑态为 0）
+  radius: number;         // 半径
+}
+```
 
-- 关键字段：`id`、`kind=music-block`、`x/y`、`width/height`、`noteName`、`volume`、`durationMs`、`timbre=piano`。
-- 规则：参数在编辑态可修改，播放态锁定。
+**规则**：播放态中唯一会被物理引擎推进的实体类型。
 
-### ContactEvent
+---
 
-- 关键字段：`id`、`timeMs`、`ballId`、`musicBlockId`、`noteName`、`volume`。
-- 规则：播放时持续记录；编辑态用于回看渲染。
+### Block（方块）
+
+```typescript
+interface Block {
+  id: string;
+  kind: "block";          // 类型判别字段
+  x: number;              // 中心位置 X
+  y: number;              // 中心位置 Y
+  width: number;          // 宽度
+  height: number;         // 高度
+  rotation: number;       // 旋转角度（弧度）
+}
+```
+
+**规则**：始终静态，不参与物理运动。
+
+---
+
+### MusicBlock（音乐方块）
+
+```typescript
+interface MusicBlock {
+  id: string;
+  kind: "music-block";    // 类型判别字段
+  x: number;              // 中心位置 X
+  y: number;              // 中心位置 Y
+  width: number;          // 宽度
+  height: number;         // 高度
+  noteName: string;       // 音名（如 "C4"）
+  volume: number;         // 音量（0 ~ 1）
+  durationMs: number;     // 包络持续时长（毫秒，> 0）
+  timbre: "piano";        // v1 固定钢琴音色
+}
+```
+
+**规则**：参数在编辑态可修改，播放态锁定。
+
+---
+
+### ContactEvent（碰撞事件）
+
+```typescript
+interface ContactEvent {
+  id: string;             // 事件唯一标识
+  timeMs: number;         // 触发时间（播放开始后的毫秒数）
+  ballId: string;         // 触发碰撞的小球 ID
+  musicBlockId: string;   // 被碰撞的音乐方块 ID
+  noteName: string;       // 该音乐方块的音名
+  volume: number;         // 该音乐方块的音量
+}
+```
+
+**规则**：播放时持续写入；编辑态仅用于 Timeline 回看渲染。
+
+---
+
+### Entity 联合类型
+
+```typescript
+type Entity = Ball | Block | MusicBlock;
+```
+
+通过 `kind` 字段区分实体类型（判别联合，discriminated union）。
+
+---
 
 ## 2. 存档结构
 
-- 顶层：`version`、`savedAt`、`scene`。
-- 存档载体：`localStorage`。
-- 版本策略：当前固定 `version=1`，后续升级需提供迁移。
+### 顶层格式
+
+```typescript
+interface SaveData {
+  version: number;        // 存档版本号（当前固定为 1）
+  savedAt: string;        // ISO 8601 时间戳
+  scene: Scene;           // 完整场景数据
+}
+```
+
+### 存储载体
+
+- 使用浏览器 `localStorage`
+- Key：固定字符串（如 `"marble-music-save"`）
+- Value：`JSON.stringify(saveData)`
+
+### 版本策略
+
+| 版本 | 说明                                           |
+| ---- | ---------------------------------------------- |
+| 1    | 当前版本，包含所有 v1 实体和参数               |
+| 2+   | 未来版本需提供 `migrate(v: number)` 迁移函数   |
+
+---
 
 ## 3. 存档时机
 
-- 编辑动作后进入节流保存窗口。
-- 模式切换（尤其播放结束回编辑）触发一次强制保存。
-- 页面可见性变化或离开前可尝试补写（受浏览器限制）。
+| 触发场景                     | 保存方式     | 说明                                 |
+| ---------------------------- | ------------ | ------------------------------------ |
+| 编辑操作后                   | 节流保存     | 操作后进入节流窗口（如 1~2 秒后写入）|
+| 播放 -> 编辑切换             | 强制保存     | 模式切换回编辑态时立即写入           |
+| 页面可见性变化（离开标签页） | 尝试保存     | 受浏览器 `visibilitychange` 限制     |
+| 页面关闭前                   | 尝试保存     | 受浏览器 `beforeunload` 限制         |
+
+### 节流策略
+
+- 每次编辑操作触发一个保存意图
+- 实际写入 `localStorage` 有最小间隔（如 1000 ms）
+- 窗口期内的多次操作合并为一次写入
+- 强制保存不受节流限制
+
+---
 
 ## 4. 恢复流程
 
-1. 应用初始化读取本地快照。
-2. 校验 JSON Schema 与关键字段完整性。
-3. 校验通过则恢复场景；失败则回退默认空场景并提示用户。
+```
+应用启动
+    │
+    ▼
+读取 localStorage
+    │
+    ├─ 无数据 → 创建默认空场景
+    │
+    ├─ JSON 解析失败 → 创建默认空场景 + 提示用户"存档损坏"
+    │
+    └─ 解析成功
+         │
+         ▼
+    校验 version 字段
+         │
+         ├─ version == 当前版本 → 直接使用
+         ├─ version < 当前版本 → 运行迁移链
+         └─ version > 当前版本 → 创建默认空场景 + 提示用户"存档版本过高"
+              │
+              ▼
+    校验实体数据完整性
+         │
+         ├─ 通过 → 恢复场景
+         └─ 失败 → 创建默认空场景 + 提示用户"存档数据不完整"
+```
 
-## 5. 与契约文件对齐
+### 校验规则
 
-- 契约来源：`specs/001-music-physics-sandbox/contracts/sandbox-state.schema.json`。
-- 强约束：
-  - `scene.mode` 仅 `edit | play`。
-  - `musicBlock.timbre` 固定 `piano`。
-  - `volume` 范围 `0~1`。
-  - `durationMs` 必须大于 0。
-- GDD 与契约冲突时，以契约校验规则优先，并在文档更新中修正叙述。
+| 字段                     | 校验                               |
+| ------------------------ | ---------------------------------- |
+| `scene.mode`             | 必须是 `"edit"` 或 `"play"`        |
+| `musicBlock.timbre`      | 必须是 `"piano"`                   |
+| `musicBlock.volume`      | 必须在 `0 ~ 1` 范围内             |
+| `musicBlock.durationMs`  | 必须 `> 0`                         |
+| `entity.kind`            | 必须是 `"ball"` / `"block"` / `"music-block"` |
+| `entity.id`              | 不可为空，场景内唯一               |
 
-## 6. 一致性备注
+---
 
-- Timeline 的“隐藏”仅是 UI 层行为，不影响 `scene.timeline` 记录。
-- 跟随策略由“选中球 + 启动播放时判定”决定，`selectedBallId` 仅用于启动时决策，不引入额外跟随状态持久化。
-- 预测线为运行态计算结果，不进入持久化结构。
+## 5. 契约文件对齐
+
+- **契约来源**：`specs/001-music-physics-sandbox/contracts/sandbox-state.schema.json`
+- **优先级**：GDD 与契约冲突时，以契约中的校验规则为准，随后更新 GDD 叙述使其一致
+
+### 强约束汇总
+
+| 约束                         | 来源   |
+| ---------------------------- | ------ |
+| `scene.mode` 仅 `edit`/`play`| 契约   |
+| `musicBlock.timbre` 固定 `piano` | 契约 |
+| `volume` 范围 `0 ~ 1`       | 契约   |
+| `durationMs` > 0             | 契约   |
+
+---
+
+## 6. 持久化边界说明
+
+以下数据**不进入持久化**：
+
+| 数据             | 原因                                             |
+| ---------------- | ------------------------------------------------ |
+| 预测线           | 运行时计算结果，依赖实时场景快照                 |
+| 播放态物理状态   | 播放是临时模拟，停止后回退到编辑态初始状态       |
+| 活跃 voice       | 音频实例是瞬时的，不需要保存                     |
+| 跟随状态         | 由 `selectedBallId` + 播放启动判定推导，不需独立存储 |
+
+以下数据**进入持久化**：
+
+| 数据             | 说明                                             |
+| ---------------- | ------------------------------------------------ |
+| 所有实体         | 位置、尺寸、参数完整保存                         |
+| `selectedBallId` | 恢复后保留用户上次的选中状态                     |
+| Timeline 事件    | 恢复后可查看上次播放的回看记录                   |
+| 重力配置         | 场景级参数                                       |
