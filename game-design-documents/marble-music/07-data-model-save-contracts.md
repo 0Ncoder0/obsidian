@@ -13,13 +13,13 @@ interface Scene {
   gravity: { x: number; y: number }; // 重力向量（默认 { x: 0, y: 9.8 }）
   selectedBallId: string | null; // 当前选中球 ID，null 表示无选中
   entities: Entity[];            // 场景中所有实体
-  timeline: ContactEvent[];      // 碰撞事件记录
 }
 ```
 
 **说明**：
-- `selectedBallId` 用于播放启动时的跟随目标判定，不影响持久化以外的逻辑
+- `selectedBallId` 用于播放启动时的跟随目标判定
 - `mode` 在存档中始终保存为 `"edit"`（播放态不持久化）
+- 不存在 `timeline` 字段——Timeline 五线谱的数据由 PredictionEngine 实时计算，不进入持久化
 
 ---
 
@@ -70,30 +70,35 @@ interface MusicBlock {
   width: number;          // 宽度
   height: number;         // 高度
   noteName: string;       // 音名（如 "C4"）
-  volume: number;         // 音量（0 ~ 1）
-  durationMs: number;     // 包络持续时长（毫秒，> 0）
+  volume: number;         // 音量（0 ~ 1），同时决定自然衰减时长
   timbre: "piano";        // v1 固定钢琴音色
 }
 ```
 
-**规则**：参数在编辑态可修改，播放态锁定。
+**规则**：
+- 参数在编辑态可修改，播放态锁定
+- **无 `durationMs` 字段**：声音持续时长由 `volume` 的自然衰减自动决定，不提供显式配置
 
 ---
 
-### ContactEvent（碰撞事件）
+### PredictedNote（预测音符 -- 运行时类型）
+
+PredictionEngine 模拟产生的碰撞预测数据，用于 Timeline 五线谱渲染。
 
 ```typescript
-interface ContactEvent {
-  id: string;             // 事件唯一标识
-  timeMs: number;         // 触发时间（播放开始后的毫秒数）
-  ballId: string;         // 触发碰撞的小球 ID
+interface PredictedNote {
+  timeMs: number;         // 预测碰撞时间（模拟开始后的毫秒数）
+  ballId: string;         // 碰撞的小球 ID
   musicBlockId: string;   // 被碰撞的音乐方块 ID
   noteName: string;       // 该音乐方块的音名
   volume: number;         // 该音乐方块的音量
 }
 ```
 
-**规则**：播放时持续写入；编辑态仅用于 Timeline 回看渲染。
+**规则**：
+- 纯运行时数据，不进入持久化存储
+- 由 PredictionEngine 在编辑态场景变更时重新计算
+- 供 TimelineStaffRenderer 按 `ballId` 分组绘制五线谱
 
 ---
 
@@ -176,7 +181,7 @@ interface SaveData {
               ▼
     校验实体数据完整性
          │
-         ├─ 通过 → 恢复场景
+         ├─ 通过 → 恢复场景 → 触发预测计算（生成 Timeline 五线谱）
          └─ 失败 → 创建默认空场景 + 提示用户"存档数据不完整"
 ```
 
@@ -187,7 +192,6 @@ interface SaveData {
 | `scene.mode`             | 必须是 `"edit"` 或 `"play"`        |
 | `musicBlock.timbre`      | 必须是 `"piano"`                   |
 | `musicBlock.volume`      | 必须在 `0 ~ 1` 范围内             |
-| `musicBlock.durationMs`  | 必须 `> 0`                         |
 | `entity.kind`            | 必须是 `"ball"` / `"block"` / `"music-block"` |
 | `entity.id`              | 不可为空，场景内唯一               |
 
@@ -200,12 +204,13 @@ interface SaveData {
 
 ### 强约束汇总
 
-| 约束                         | 来源   |
-| ---------------------------- | ------ |
-| `scene.mode` 仅 `edit`/`play`| 契约   |
-| `musicBlock.timbre` 固定 `piano` | 契约 |
-| `volume` 范围 `0 ~ 1`       | 契约   |
-| `durationMs` > 0             | 契约   |
+| 约束                             | 来源   |
+| -------------------------------- | ------ |
+| `scene.mode` 仅 `edit`/`play`   | 契约   |
+| `musicBlock.timbre` 固定 `piano` | 契约   |
+| `volume` 范围 `0 ~ 1`           | 契约   |
+
+**注意**：原契约中的 `durationMs > 0` 约束已移除，该字段不再存在于数据模型中。契约 schema 需同步更新。
 
 ---
 
@@ -213,11 +218,12 @@ interface SaveData {
 
 以下数据**不进入持久化**：
 
-| 数据             | 原因                                             |
-| ---------------- | ------------------------------------------------ |
-| 预测线           | 运行时计算结果，依赖实时场景快照                 |
-| 播放态物理状态   | 播放是临时模拟，停止后回退到编辑态初始状态       |
-| 活跃 voice       | 音频实例是瞬时的，不需要保存                     |
+| 数据             | 原因                                                 |
+| ---------------- | ---------------------------------------------------- |
+| 预测线           | 运行时计算结果，依赖实时场景快照                     |
+| Timeline 五线谱  | 由 PredictionEngine 实时计算的 PredictedNote，非持久数据 |
+| 播放态物理状态   | 播放是临时模拟，停止后回退到编辑态初始状态           |
+| 活跃 voice       | 音频实例是瞬时的，不需要保存                         |
 | 跟随状态         | 由 `selectedBallId` + 播放启动判定推导，不需独立存储 |
 
 以下数据**进入持久化**：
@@ -226,5 +232,4 @@ interface SaveData {
 | ---------------- | ------------------------------------------------ |
 | 所有实体         | 位置、尺寸、参数完整保存                         |
 | `selectedBallId` | 恢复后保留用户上次的选中状态                     |
-| Timeline 事件    | 恢复后可查看上次播放的回看记录                   |
 | 重力配置         | 场景级参数                                       |
